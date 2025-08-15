@@ -1,20 +1,27 @@
 #include "helpers.hpp"
 #include <cmath>
 
+// ----------------------
 // Padding
+// ----------------------
+// Adds zero-padding around the input tensor
 Eigen::Tensor<double, 3> pad(const Eigen::Tensor<double, 3>& input, int pad) {
     int C = input.dimension(0);
     int H = input.dimension(1);
     int W = input.dimension(2);
 
     Eigen::Tensor<double, 3> output(C, H + 2 * pad, W + 2 * pad);
-    output.setZero();
+    output.setZero(); // initialize with zeros
+    // Copy original input into the center of the padded output
     output.slice(Eigen::array<Eigen::Index, 3>{0, pad, pad},
                  Eigen::array<Eigen::Index, 3>{C, H, W}) = input;
     return output;
 }
 
+// ----------------------
 // Convolution forward
+// ----------------------
+// Computes 2D convolution of input X with a set of filters and adds bias
 Eigen::Tensor<double, 3> convolve(
     const Eigen::Tensor<double, 3>& X,
     const Eigen::Tensor<double, 4>& filters,
@@ -33,10 +40,12 @@ Eigen::Tensor<double, 3> convolve(
     Eigen::Tensor<double, 3> out(N_filters, H_out, W_out);
     out.setZero();
 
+    // Loop over each filter
     for (int f = 0; f < N_filters; f++) {
         for (int i = 0; i < H_out; i++) {
             for (int j = 0; j < W_out; j++) {
                 double sum = 0.0;
+                // Sum over channels and kernel
                 for (int c = 0; c < C_in; c++) {
                     for (int ki = 0; ki < K; ki++) {
                         for (int kj = 0; kj < K; kj++) {
@@ -44,14 +53,17 @@ Eigen::Tensor<double, 3> convolve(
                         }
                     }
                 }
-                out(f, i, j) = sum + bias(f);
+                out(f, i, j) = sum + bias(f); // Add bias
             }
         }
     }
     return out;
 }
 
+// ----------------------
 // Convolution backward
+// ----------------------
+// Computes gradients w.r.t input, filters, and bias
 Eigen::Tensor<double, 3> convolve_backward(
     const Eigen::Tensor<double, 3>& d_out,
     const Eigen::Tensor<double, 3>& X,
@@ -73,10 +85,11 @@ Eigen::Tensor<double, 3> convolve_backward(
     d_filters.setZero();
     d_bias.setZero();
 
+    // Loop over each filter and position to compute gradients
     for (int f = 0; f < N_filters; f++) {
         for (int i = 0; i < H_out; i++) {
             for (int j = 0; j < W_out; j++) {
-                d_bias(f) += d_out(f, i, j);
+                d_bias(f) += d_out(f, i, j); // gradient w.r.t bias
                 for (int c = 0; c < C_in; c++) {
                     for (int ki = 0; ki < K; ki++) {
                         for (int kj = 0; kj < K; kj++) {
@@ -91,7 +104,10 @@ Eigen::Tensor<double, 3> convolve_backward(
     return dX;
 }
 
+// ----------------------
 // Max Pooling forward
+// ----------------------
+// Computes max value over each pooling window
 Eigen::Tensor<double, 3> maxpool(
     const Eigen::Tensor<double, 3>& input,
     int size,
@@ -122,7 +138,10 @@ Eigen::Tensor<double, 3> maxpool(
     return output;
 }
 
+// ----------------------
 // Max Pooling backward
+// ----------------------
+// Routes gradient only to the position of the maximum value in each pooling window
 Eigen::Tensor<double, 3> maxpool_backward(
     const Eigen::Tensor<double, 3>& d_out,
     const Eigen::Tensor<double, 3>& input,
@@ -143,6 +162,7 @@ Eigen::Tensor<double, 3> maxpool_backward(
             for (int j = 0; j < W_out; j++) {
                 double max_val = -1e9;
                 int max_i = -1, max_j = -1;
+                // Find the position of the max value in the pooling window
                 for (int pi = 0; pi < size; pi++) {
                     for (int pj = 0; pj < size; pj++) {
                         double val = input(c, i * stride + pi, j * stride + pj);
@@ -153,6 +173,7 @@ Eigen::Tensor<double, 3> maxpool_backward(
                         }
                     }
                 }
+                // Route gradient to the max position
                 d_input(c, i * stride + max_i, j * stride + max_j) += d_out(c, i, j);
             }
         }
@@ -160,7 +181,10 @@ Eigen::Tensor<double, 3> maxpool_backward(
     return d_input;
 }
 
+// ----------------------
 // Flatten forward
+// ----------------------
+// Converts a 3D tensor into a 1D vector
 Eigen::VectorXd flatten(const Eigen::Tensor<double, 3>& x) {
     int size = x.dimension(0) * x.dimension(1) * x.dimension(2);
     Eigen::VectorXd out(size);
@@ -175,7 +199,10 @@ Eigen::VectorXd flatten(const Eigen::Tensor<double, 3>& x) {
     return out;
 }
 
+// ----------------------
 // Flatten backward
+// ----------------------
+// Reshapes 1D gradient back into 3D tensor
 Eigen::Tensor<double, 3> flatten_backward(
     const Eigen::VectorXd& d_out,
     int C, int H, int W)
@@ -192,22 +219,26 @@ Eigen::Tensor<double, 3> flatten_backward(
     return d_input;
 }
 
-// ReLU
+// ----------------------
+// ReLU activation
+// ----------------------
 Eigen::MatrixXd relu(const Eigen::MatrixXd& x) {
-    return x.cwiseMax(0.0);
+    return x.cwiseMax(0.0); // element-wise max with 0
 }
 Eigen::MatrixXd relu_derivative(const Eigen::MatrixXd& x) {
-    return (x.array() > 0).cast<double>();
+    return (x.array() > 0).cast<double>(); // 1 if x>0 else 0
 }
 
-// Softmax forward
+// ----------------------
+// Softmax
+// ----------------------
 Eigen::VectorXd softmax(const Eigen::VectorXd& x) {
-    Eigen::VectorXd shifted = x.array() - x.maxCoeff();
+    Eigen::VectorXd shifted = x.array() - x.maxCoeff(); // stability trick
     Eigen::VectorXd exp_x = shifted.array().exp();
     return exp_x / exp_x.sum();
 }
 
-// Softmax backward
+// Softmax backward (when not combined with cross-entropy)
 Eigen::VectorXd softmax_backward(
     const Eigen::VectorXd& s,
     const Eigen::VectorXd& d_out)
@@ -216,25 +247,27 @@ Eigen::VectorXd softmax_backward(
     return s.array() * (d_out.array() - dot);
 }
 
-// Softmax + Cross-Entropy backward shortcut
+// Shortcut: Softmax + Cross-Entropy backward
 Eigen::VectorXd softmax_cross_entropy_backward(
     const Eigen::VectorXd& predicted,
     int actual)
 {
     Eigen::VectorXd grad = predicted;
-    grad(actual) -= 1.0;
+    grad(actual) -= 1.0; // simplified gradient formula
     return grad;
 }
 
+// ----------------------
 // Cross-entropy loss
+// ----------------------
 double cross_entropy_loss(const Eigen::VectorXd& predicted, int actual) {
-    return -std::log(predicted(actual) + 1e-15);
+    return -std::log(predicted(actual) + 1e-15); // add epsilon for numerical stability
 }
 Eigen::VectorXd cross_entropy_loss_derivative(
     const Eigen::VectorXd& predicted,
     int actual)
 {
     Eigen::VectorXd grad = predicted;
-    grad(actual) -= 1.0;
+    grad(actual) -= 1.0; // same as softmax+cross-entropy derivative
     return grad;
 }
