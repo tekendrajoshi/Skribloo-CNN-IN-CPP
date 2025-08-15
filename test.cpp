@@ -1,23 +1,32 @@
 #include "SimpleCNN.hpp"
 #include <iostream>
 
-// Assuming test_single_image is declared somewhere accessible
+// ======================= SINGLE IMAGE TEST FUNCTION =======================
+// This function tests the model on a single image and prints the predicted class and confidence.
 void test_single_image(SimpleCNN& model, const std::string& image_path, int actual_label) {
+    // Convert image file to normalized tensor
     Eigen::Tensor<double, 3> input_tensor = model.convert_images(image_path);
+
+    // Forward pass through the CNN
     auto [probabilities, loss] = model.forward_pass(input_tensor, actual_label);
 
+    // Determine the predicted class
     int predicted_class = 0;
-    probabilities.maxCoeff(&predicted_class);
-    double confidence = probabilities(predicted_class);
+    probabilities.maxCoeff(&predicted_class);  // Index of maximum probability
 
+    double confidence = probabilities(predicted_class); // Probability of predicted class
+
+    // Print results
     std::cout << "Actual class: " << actual_label 
               << ", Predicted class: " << predicted_class 
               << " with confidence: " << confidence << std::endl;
 }
-int main() {
-    SimpleCNN model;
 
-    // Load saved model parameters
+// ======================= MAIN FUNCTION =======================
+int main() {
+    SimpleCNN model;  // Initialize CNN model
+
+    // Load previously trained model parameters
     model.load("simple_cnn_model.txt");
 
     // Test on one or more images
