@@ -1,4 +1,4 @@
-# Skribloo – AI Sketch Recognition in C++ using CNN 🎨🤖
+# Skribloo – AI Sketch Recognition in C++ using CNN
 
 **Skribloo** is an interactive sketch recognition game inspired by Google’s QuickDraw. It allows users to draw sketches on a canvas and have a custom **Convolutional Neural Network (CNN)** implemented entirely from scratch in C++ predict the object in real-time.
 
@@ -29,6 +29,6 @@ This project was developed as part of the **OOP 2nd Semester Project** at **Pulc
 **Lecturer:** Daya Sagar Baral  
 
 Department of Electronics and Computer Engineering,
-Institute of Engineering Pulchowk Campus  
+**Institute of Engineering Pulchowk Campus**
 
 **Dataset:** Google QuickDraw
