@@ -34,7 +34,7 @@ namespace Colors {
     const Color CANVAS_BORDER(203, 213, 225);
 }
 
-class QuickDrawGUI {
+class SkriblooAIGUI {
 private:
     SDL_Window* window;
     SDL_Renderer* renderer;
@@ -71,11 +71,12 @@ private:
         "airplane", "apple", "bicycle", "book", "car",
         "cat", "chair", "clock", "cloud", "cup"
     };
-    std::string currentWord;
     std::string prediction;
     std::string secondPrediction;
+    std::string thirdPrediction;
     float confidence;
     float secondConfidence;
+    float thirdConfidence;
     
     // Modern styled buttons
     struct Button {
@@ -96,12 +97,12 @@ private:
     Button newGameButton;
     
 public:
-    QuickDrawGUI() : window(nullptr), renderer(nullptr), font(nullptr), titleFont(nullptr), smallFont(nullptr),
-                     currentState(MENU), isDrawing(false), animationTime(0), pulsePhase(0), confidence(0.0f),
-                     playButton(WINDOW_WIDTH/2 - 100, 300, 200, 60, "Start Drawing!", Colors::PRIMARY, Colors::PRIMARY_HOVER),
-                     submitButton(500, 200, 120, 50, "Submit", Colors::SUCCESS, Color(34, 217, 114)),
-                     clearButton(500, 270, 120, 50, "Clear", Colors::WARNING, Color(255, 178, 31)),
-                     newGameButton(WINDOW_WIDTH/2 - 100, 400, 200, 60, "New Game", Colors::ACCENT, Color(159, 112, 255)) {
+    SkriblooAIGUI() : window(nullptr), renderer(nullptr), font(nullptr), titleFont(nullptr), smallFont(nullptr),
+                      currentState(MENU), isDrawing(false), animationTime(0), pulsePhase(0), confidence(0.0f),
+                      playButton(WINDOW_WIDTH/2 - 100, 300, 200, 60, "Start Drawing!", Colors::PRIMARY, Colors::PRIMARY_HOVER),
+                      submitButton(500, 270, 120, 50, "Submit", Colors::SUCCESS, Color(34, 217, 114)),
+                      clearButton(500, 340, 120, 50, "Clear", Colors::WARNING, Color(255, 178, 31)),
+                      newGameButton(WINDOW_WIDTH/2 - 100, 400, 200, 60, "Draw Again", Colors::ACCENT, Color(159, 112, 255)) {
         
         canvas.resize(CANVAS_SIZE, std::vector<bool>(CANVAS_SIZE, false));
         srand(time(nullptr));
@@ -122,7 +123,7 @@ public:
             return false;
         }
         
-        window = SDL_CreateWindow("Quick Draw AI ✨", 
+        window = SDL_CreateWindow("SkriblooAI - AI Drawing Guesser", 
                                  SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                  WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
         if (window == nullptr) {
@@ -364,14 +365,15 @@ public:
         }
     }
     
-    void startNewGame() {
+    void startDrawing() {
         clearCanvas();
-        currentWord = categories[rand() % categories.size()];
         currentState = DRAWING;
         prediction = "";
         secondPrediction = "";
+        thirdPrediction = "";
         confidence = 0.0f;
         secondConfidence = 0.0f;
+        thirdConfidence = 0.0f;
     }
     
     void submitDrawing() {
@@ -394,7 +396,7 @@ public:
         }
         
         saveImage28x28("current_drawing.png", image28x28);
-        prediction = testImage("current_drawing.png");
+        analyzeDrawing("current_drawing.png");
         currentState = RESULT;
     }
     
@@ -408,37 +410,48 @@ public:
         cv::imwrite(filename, img);
     }
     
-    std::string testImage(const std::string& filename) {
+    void analyzeDrawing(const std::string& filename) {
         try {
             Eigen::Tensor<double, 3> input_tensor = model.convert_images(filename);
             auto [probabilities, loss] = model.forward_pass(input_tensor, 0);
             
-            // Find top 2 predictions
-            int predicted_class = 0;
-            int second_class = 0;
-            
-            // Get the best prediction
-            probabilities.maxCoeff(&predicted_class);
-            confidence = probabilities(predicted_class);
-            
-            // Find second best by setting max to -1 and finding max again
-            auto temp_probs = probabilities;
-            temp_probs(predicted_class) = -1.0;
-            secondConfidence = temp_probs.maxCoeff(&second_class);
-            
-            if (predicted_class < 0 || predicted_class >= (int)categories.size() ||
-                second_class < 0 || second_class >= (int)categories.size()) {
-                return "error";
+            // Create a vector of probability-index pairs for sorting
+            std::vector<std::pair<double, int>> prob_pairs;
+            for (int i = 0; i < probabilities.size(); ++i) {
+                prob_pairs.push_back({probabilities(i), i});
             }
             
-            prediction = categories[predicted_class];
-            secondPrediction = categories[second_class];
+            // Sort by probability in descending order
+            std::sort(prob_pairs.begin(), prob_pairs.end(), std::greater<>());
             
-            return categories[predicted_class];
+            // Get top 3 predictions
+            if (prob_pairs.size() >= 1) {
+                confidence = prob_pairs[0].first;
+                int predicted_class = prob_pairs[0].second;
+                if (predicted_class >= 0 && predicted_class < (int)categories.size()) {
+                    prediction = categories[predicted_class];
+                }
+            }
+            
+            if (prob_pairs.size() >= 2) {
+                secondConfidence = prob_pairs[1].first;
+                int second_class = prob_pairs[1].second;
+                if (second_class >= 0 && second_class < (int)categories.size()) {
+                    secondPrediction = categories[second_class];
+                }
+            }
+            
+            if (prob_pairs.size() >= 3) {
+                thirdConfidence = prob_pairs[2].first;
+                int third_class = prob_pairs[2].second;
+                if (third_class >= 0 && third_class < (int)categories.size()) {
+                    thirdPrediction = categories[third_class];
+                }
+            }
         }
         catch (const std::exception& e) {
             std::cerr << "Error in CNN prediction: " << e.what() << std::endl;
-            return "error";
+            prediction = "error";
         }
     }
     
@@ -458,7 +471,7 @@ public:
             
             if (e.type == SDL_MOUSEBUTTONDOWN) {
                 if (currentState == MENU && isPointInRect(mouseX, mouseY, playButton.rect)) {
-                    startNewGame();
+                    startDrawing();
                 }
                 else if (currentState == DRAWING) {
                     if (isPointInRect(mouseX, mouseY, submitButton.rect)) {
@@ -499,66 +512,75 @@ public:
         drawGradientBackground();
         
         if (currentState == MENU) {
-            // Title with glow effect
-            drawText("Quick Draw AI", WINDOW_WIDTH/2, 100, titleFont, Colors::TEXT_PRIMARY, true);
-            drawText("✨", WINDOW_WIDTH/2 + 100, 95, titleFont, Colors::ACCENT, true);
+            // Title with AI brain symbol
+            drawText("Skribloo", WINDOW_WIDTH/2, 50, titleFont, Colors::TEXT_PRIMARY, true);
             
             // Subtitle
-            drawText("Test your drawing skills against AI!", WINDOW_WIDTH/2, 140, font, Colors::TEXT_SECONDARY, true);
+            drawText("Can a Neural Network learn doodling?", WINDOW_WIDTH/2, 120, font, Colors::TEXT_SECONDARY, true);
             
             // Animated decorative circles
-            drawPulsingCircle(120, 180, 25, Colors::PRIMARY);
-            drawPulsingCircle(WINDOW_WIDTH - 120, 320, 20, Colors::ACCENT);
-            
+            drawPulsingCircle(220, 380, 25, Colors::PRIMARY);
+            drawPulsingCircle(220, 280, 25, Colors::ACCENT);
+            drawPulsingCircle(WINDOW_WIDTH - 220, 380, 20, Colors::ACCENT);
+            drawPulsingCircle(WINDOW_WIDTH - 220, 280, 20, Colors::PRIMARY);            
             drawModernButton(playButton, mouseX, mouseY);
             
-            // Footer
-            drawText("Draw: airplane, apple, bicycle, book, car, cat, chair, clock, cloud, cup", 
-                    WINDOW_WIDTH/2, WINDOW_HEIGHT - 30, smallFont, Colors::TEXT_SECONDARY, true);
+            // Footer with categories
+            drawText("Categoreis: airplane, apple, bicycle, book, car, cat, chair, clock, cloud, cup", 
+                    WINDOW_WIDTH/2, WINDOW_HEIGHT - 50, smallFont, Colors::TEXT_SECONDARY, true);
         }
         else if (currentState == DRAWING) {
             // Header
-            drawText("Draw:", 50, 40, font, Colors::TEXT_SECONDARY);
-            drawText(currentWord, 120, 35, titleFont, Colors::PRIMARY);
-            
+            drawText("Draw Something!", WINDOW_WIDTH/2, 40, titleFont, Colors::PRIMARY, true);            
             drawCanvas();
             
             // Side panel with instructions
-            drawText("Instructions:", 520, 100, font, Colors::TEXT_PRIMARY);
-            drawText("• Draw in the white area", 520, 125, smallFont, Colors::TEXT_SECONDARY);
-            drawText("• Use your mouse to draw", 520, 145, smallFont, Colors::TEXT_SECONDARY);
-            drawText("• Click submit when done", 520, 165, smallFont, Colors::TEXT_SECONDARY);
+            drawText("Instructions:", 480, 120, font, Colors::TEXT_PRIMARY);
+            drawText("Draw anything in the canvas", 480, 150, smallFont, Colors::TEXT_SECONDARY);
+            drawText("Use your mouse to draw", 480, 175, smallFont, Colors::TEXT_SECONDARY);
+            drawText("Click submit when finished", 480, 200, smallFont, Colors::TEXT_SECONDARY);
+            drawText("AI will try to guess it!", 480, 225, smallFont, Colors::ACCENT);
             
             drawModernButton(submitButton, mouseX, mouseY);
             drawModernButton(clearButton, mouseX, mouseY);
         }
         else if (currentState == RESULT) {
             // Results with styling
-            drawText("Results", WINDOW_WIDTH/2, 60, titleFont, Colors::TEXT_PRIMARY, true);
+            drawText("Neural Network's Analysis", WINDOW_WIDTH/2, 60, titleFont, Colors::TEXT_PRIMARY, true);            
+            drawText("Here's what I think you drew:", WINDOW_WIDTH/2, 110, font, Colors::TEXT_SECONDARY, true);
             
-            drawText("You drew:", WINDOW_WIDTH/2, 110, font, Colors::TEXT_SECONDARY, true);
-            drawText(currentWord, WINDOW_WIDTH/2, 135, font, Colors::TEXT_PRIMARY, true);
+            // Top 3 AI predictions
+            int yOffset = 150;
             
-            // Top 2 AI predictions
-            drawText("AI's top guesses:", WINDOW_WIDTH/2, 175, font, Colors::TEXT_SECONDARY, true);
-            
-            // First prediction
-            drawText("1st: " + prediction, WINDOW_WIDTH/2, 200, font, Colors::ACCENT, true);
-            drawProgressBar(confidence, WINDOW_WIDTH/2 - 80, 225, 160, 15);
-            std::string confidence1Text = std::to_string((int)(confidence * 100)) + "%";
-            drawText(confidence1Text, WINDOW_WIDTH/2, 245, smallFont, Colors::TEXT_PRIMARY, true);
-            
-            // Second prediction
-            drawText("2nd: " + secondPrediction, WINDOW_WIDTH/2, 275, font, Colors::TEXT_SECONDARY, true);
-            drawProgressBar(secondConfidence, WINDOW_WIDTH/2 - 80, 300, 160, 15);
-            std::string confidence2Text = std::to_string((int)(secondConfidence * 100)) + "%";
-            drawText(confidence2Text, WINDOW_WIDTH/2, 320, smallFont, Colors::TEXT_SECONDARY, true);
-            
-            // Result indicator
-            bool isCorrect = (prediction == currentWord);
-            std::string result = isCorrect ? "🎉 CORRECT!" : "❌ TRY AGAIN!";
-            Color resultColor = isCorrect ? Colors::SUCCESS : Colors::ERROR;
-            drawText(result, WINDOW_WIDTH/2, 355, font, resultColor, true);
+            if (!prediction.empty() && prediction != "error") {
+                // First prediction (most confident)
+                drawText("1st Guess: " + prediction, WINDOW_WIDTH/2, yOffset, font, Colors::SUCCESS, true);
+                drawProgressBar(confidence, WINDOW_WIDTH/2 - 100, yOffset + 25, 200, 15);
+                std::string confidence1Text = std::to_string((int)(confidence * 100)) + "% confident";
+                drawText(confidence1Text, WINDOW_WIDTH/2, yOffset + 45, smallFont, Colors::TEXT_PRIMARY, true);
+                yOffset += 80;
+                
+                // Second prediction
+                if (!secondPrediction.empty()) {
+                    drawText("2nd Guess: " + secondPrediction, WINDOW_WIDTH/2, yOffset, font, Colors::PRIMARY, true);
+                    drawProgressBar(secondConfidence, WINDOW_WIDTH/2 - 100, yOffset + 25, 200, 15);
+                    std::string confidence2Text = std::to_string((int)(secondConfidence * 100)) + "% confident";
+                    drawText(confidence2Text, WINDOW_WIDTH/2, yOffset + 45, smallFont, Colors::TEXT_SECONDARY, true);
+                    yOffset += 70;
+                }
+                
+                // Third prediction
+                if (!thirdPrediction.empty()) {
+                    drawText("3rd Guess: " + thirdPrediction, WINDOW_WIDTH/2, yOffset, font, Colors::TEXT_SECONDARY, true);
+                    drawProgressBar(thirdConfidence, WINDOW_WIDTH/2 - 100, yOffset + 25, 200, 15);
+                    std::string confidence3Text = std::to_string((int)(thirdConfidence * 100)) + "% confident";
+                    drawText(confidence3Text, WINDOW_WIDTH/2, yOffset + 45, smallFont, Colors::TEXT_SECONDARY, true);
+                    yOffset += 70;
+                }
+            } else {
+                drawText("Hmm, I'm not sure what this is!", WINDOW_WIDTH/2, yOffset, font, Colors::WARNING, true);
+                drawText("Try drawing something else!", WINDOW_WIDTH/2, yOffset + 30, font, Colors::TEXT_SECONDARY, true);
+            }
             
             drawModernButton(newGameButton, mouseX, mouseY);
         }
@@ -576,7 +598,7 @@ public:
 };
 
 int main() {
-    QuickDrawGUI game;
+    SkriblooAIGUI game;
     
     if (!game.initialize()) {
         std::cerr << "Failed to initialize!" << std::endl;
